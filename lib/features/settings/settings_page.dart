@@ -18,7 +18,7 @@ class SettingsPage extends StatelessWidget {
         ),
         ListTile(
           title: Text('Tema'),
-          subtitle: Text('Escuro com roxos (padrão)'),
+          subtitle: Text('Escuro com roxos (padrão) — minimalista, mas com personalidade :)'),
         ),
       ],
     );

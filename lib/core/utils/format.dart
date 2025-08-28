@@ -1,9 +1,17 @@
 import 'package:intl/intl.dart';
 
 class Format {
-  static final _currency = NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$');
-  static final _date = DateFormat('dd/MM/yyyy');
+  static String moneyFromCents(int cents) {
+    final value = cents / 100.0;
+    return NumberFormat.currency(locale: 'pt_BR', symbol: 'R\$').format(value);
+  }
 
-  static String moneyFromCents(int cents) => _currency.format(cents / 100);
-  static String date(DateTime d) => _date.format(d);
+  static String date(DateTime dt) {
+    return DateFormat('dd/MM/yyyy', 'pt_BR').format(dt);
+  }
+
+  /// usado nos filtros (ex.: 28/08)
+  static String compactDate(DateTime dt) {
+    return DateFormat('dd/MM', 'pt_BR').format(dt);
+  }
 }

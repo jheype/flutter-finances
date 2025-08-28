@@ -1,20 +1,19 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:flutter_financas/core/category_icons.dart';
 import 'package:flutter_financas/data/models.dart';
 import 'package:flutter_financas/data/repositories.dart';
+import 'package:flutter_financas/data/providers.dart'; // <— usar provedor único
 
 final _categoryRepoProvider = Provider((ref) => CategoryRepository());
-final categoriesProvider = FutureProvider<List<CategoryModel>>(
-  (ref) => ref.watch(_categoryRepoProvider).getAll(),
-);
 
 class CategoriesPage extends ConsumerWidget {
   const CategoriesPage({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final async = ref.watch(categoriesProvider);
+    final async = ref.watch(categoriesAllProvider); // <— único
 
     return Scaffold(
       appBar: AppBar(title: const Text('Categorias')),
@@ -24,7 +23,10 @@ class CategoriesPage extends ConsumerWidget {
           itemBuilder: (context, i) {
             final c = items[i];
             return ListTile(
-              leading: CircleAvatar(backgroundColor: c.color),
+              leading: CircleAvatar(
+                backgroundColor: c.color.withAlpha(70),
+                child: Icon(c.icon, color: Colors.white),
+              ),
               title: Text(c.name),
               subtitle: Text(c.type == CategoryType.expense ? 'Despesa' : 'Receita'),
               trailing: IconButton(
@@ -49,7 +51,7 @@ class CategoriesPage extends ConsumerWidget {
                   );
                   if (ok == true) {
                     await ref.read(_categoryRepoProvider).delete(c.id!);
-                    ref.invalidate(categoriesProvider);
+                    ref.invalidate(categoriesAllProvider); // <— mantém tudo em sincronia
                   }
                 },
               ),
@@ -75,7 +77,7 @@ class CategoriesPage extends ConsumerWidget {
     );
     if (result != null) {
       await ref.read(_categoryRepoProvider).upsert(result);
-      ref.invalidate(categoriesProvider);
+      ref.invalidate(categoriesAllProvider); // <— importante!
     }
   }
 }
@@ -93,6 +95,7 @@ class _CategoryDialogState extends State<_CategoryDialog> {
   late TextEditingController _name;
   CategoryType _type = CategoryType.expense;
   Color _color = const Color(0xFFAB47BC);
+  String _iconKey = 'other';
 
   @override
   void initState() {
@@ -100,16 +103,25 @@ class _CategoryDialogState extends State<_CategoryDialog> {
     _name = TextEditingController(text: widget.seed?.name ?? '');
     _type = widget.seed?.type ?? CategoryType.expense;
     _color = Color(widget.seed?.colorValue ?? 0xFFAB47BC);
+    _iconKey = widget.seed?.iconKey ?? 'other';
+  }
+
+  @override
+  void dispose() {
+    _name.dispose();
+    super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    final iconData = iconFromKey(_iconKey);
+
     return AlertDialog(
       title: Text(widget.seed == null ? 'Nova categoria' : 'Editar categoria'),
       content: Form(
         key: _formKey,
         child: SizedBox(
-          width: 360,
+          width: 380,
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -138,7 +150,7 @@ class _CategoryDialogState extends State<_CategoryDialog> {
               const SizedBox(height: 12),
               Row(
                 children: [
-                  const Text('Cor:'),
+                  const Text('Aparência:'),
                   const SizedBox(width: 12),
                   GestureDetector(
                     onTap: () async {
@@ -150,8 +162,34 @@ class _CategoryDialogState extends State<_CategoryDialog> {
                     },
                     child: CircleAvatar(backgroundColor: _color, radius: 14),
                   ),
+                  const SizedBox(width: 12),
+                  InkWell(
+                    borderRadius: BorderRadius.circular(8),
+                    onTap: () async {
+                      final picked = await showDialog<String>(
+                        context: context,
+                        builder: (_) => const _IconPickerDialog(),
+                      );
+                      if (picked != null) setState(() => _iconKey = picked);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF2A2A2D),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(iconData, size: 18),
+                          const SizedBox(width: 8),
+                          Text(_iconKey),
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
-              )
+              ),
             ],
           ),
         ),
@@ -165,7 +203,8 @@ class _CategoryDialogState extends State<_CategoryDialog> {
                 id: widget.seed?.id,
                 name: _name.text.trim(),
                 type: _type,
-                colorValue: _color.value,
+                colorValue: _color.toARGB32(),
+                iconKey: _iconKey,
               );
               Navigator.pop(context, model);
             }
@@ -173,6 +212,53 @@ class _CategoryDialogState extends State<_CategoryDialog> {
           child: const Text('Salvar'),
         )
       ],
+    );
+  }
+}
+
+class _IconPickerDialog extends StatelessWidget {
+  const _IconPickerDialog();
+
+  @override
+  Widget build(BuildContext context) {
+    return AlertDialog(
+      title: const Text('Escolher ícone'),
+      content: SizedBox(
+        width: 420,
+        child: GridView.builder(
+          shrinkWrap: true,
+          itemCount: kCategoryIconKeys.length,
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 4,
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+          ),
+          itemBuilder: (_, i) {
+            final key = kCategoryIconKeys[i];
+            final icon = iconFromKey(key);
+            return InkWell(
+              borderRadius: BorderRadius.circular(12),
+              onTap: () => Navigator.pop(context, key),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: const Color(0xFF2A2A2D),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(icon, size: 24),
+                    const SizedBox(height: 6),
+                    Text(key,
+                        style: const TextStyle(fontSize: 12), overflow: TextOverflow.ellipsis),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar'))],
     );
   }
 }
@@ -210,12 +296,8 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
           mainAxisSize: MainAxisSize.min,
           children: [
             Container(
-              height: 40,
-              decoration: BoxDecoration(
-                color: color,
-                borderRadius: BorderRadius.circular(8),
-              ),
-            ),
+                height: 40,
+                decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(8))),
             const SizedBox(height: 12),
             _slider('Matiz', h, 0, 360, (x) => setState(() => h = x)),
             _slider('Saturação', s, 0, 1, (x) => setState(() => s = x)),
@@ -225,10 +307,7 @@ class _ColorPickerDialogState extends State<_ColorPickerDialog> {
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, color),
-          child: const Text('Usar cor'),
-        ),
+        FilledButton(onPressed: () => Navigator.pop(context, color), child: const Text('Usar cor')),
       ],
     );
   }

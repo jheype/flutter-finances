@@ -1,62 +1,68 @@
 import 'package:sqflite/sqflite.dart';
-
 import 'package:flutter_financas/data/db.dart';
 import 'package:flutter_financas/data/models.dart';
 
+/// ================= CATEGORY =================
 class CategoryRepository {
-  final Future<Database> _db = AppDb.instance.database;
+  Future<Database> get _db async => (await AppDatabase.instance.database);
 
   Future<List<CategoryModel>> getAll() async {
     final db = await _db;
-    final rows = await db.query(
-      'categories',
-      orderBy: 'type DESC, name ASC',
-    );
-    return rows.map(CategoryModel.fromMap).toList();
+    final rows = await db.query('categories', orderBy: 'name ASC');
+    return rows.map((m) => CategoryModel.fromMap(m)).toList();
   }
 
   Future<int> upsert(CategoryModel c) async {
     final db = await _db;
     if (c.id == null) {
-      // create
       return db.insert('categories', c.toMap());
     } else {
-      // update
-      await db.update('categories', c.toMap(), where: 'id=?', whereArgs: [c.id]);
-      return c.id!;
+      return db.update('categories', c.toMap(), where: 'id = ?', whereArgs: [c.id]);
     }
   }
 
-  Future<void> delete(int id) async {
+  Future<int> delete(int id) async {
     final db = await _db;
-    await db.delete('categories', where: 'id=?', whereArgs: [id]);
+    return db.delete('categories', where: 'id = ?', whereArgs: [id]);
   }
 }
 
+/// ================= TRANSACTION =================
 class TransactionRepository {
-  final Future<Database> _db = AppDb.instance.database;
+  Future<Database> get _db async => (await AppDatabase.instance.database);
 
   Future<List<TransactionModel>> getAll({DateTime? from, DateTime? to}) async {
     final db = await _db;
-    final where = <String>[];
-    final args = <Object?>[];
+    String where = '';
+    List<Object?> args = [];
 
     if (from != null) {
-      where.add('date >= ?');
+      where += 'date >= ?';
       args.add(from.millisecondsSinceEpoch);
     }
     if (to != null) {
-      where.add('date < ?');
+      if (where.isNotEmpty) where += ' AND ';
+      where += 'date < ?';
       args.add(to.millisecondsSinceEpoch);
     }
 
     final rows = await db.query(
       'transactions',
-      where: where.isEmpty ? null : where.join(' AND '),
-      whereArgs: args.isEmpty ? null : args,
-      orderBy: 'date DESC, id DESC',
+      where: where.isEmpty ? null : where,
+      whereArgs: where.isEmpty ? null : args,
+      orderBy: 'date DESC',
     );
-    return rows.map(TransactionModel.fromMap).toList();
+    return rows.map((m) => TransactionModel.fromMap(m)).toList();
+  }
+
+  Future<List<TransactionModel>> getRecent({int limit = 10}) async {
+    final db = await _db;
+    final rows = await db.query(
+      'transactions',
+      orderBy: 'date DESC',
+      limit: limit,
+    );
+    return rows.map((m) => TransactionModel.fromMap(m)).toList();
   }
 
   Future<int> insert(TransactionModel t) async {
@@ -64,50 +70,61 @@ class TransactionRepository {
     return db.insert('transactions', t.toMap());
   }
 
-  Future<void> delete(int id) async {
+  Future<int> delete(int id) async {
     final db = await _db;
-    await db.delete('transactions', where: 'id=?', whereArgs: [id]);
+    return db.delete('transactions', where: 'id = ?', whereArgs: [id]);
   }
 
   Future<int> totalBalanceCents() async {
     final db = await _db;
     final rows = await db.rawQuery('SELECT SUM(amount_cents) as total FROM transactions');
-    final total = rows.first['total'] as int?;
-    return total ?? 0;
+    final val = rows.first['total'] as int?;
+    return val ?? 0;
   }
 
-  Future<List<Map<String, int>>> lastMonthsNet(int count) async {
+  Future<List<Map<String, int>>> lastMonthsNet(int months) async {
     final db = await _db;
-
     final now = DateTime.now();
-    final start = DateTime(now.year, now.month - count + 1, 1);
-    final end = DateTime(now.year, now.month + 1, 1);
+    final start = DateTime(now.year, now.month - (months - 1), 1);
 
-    final rows = await db.rawQuery(
-      'SELECT strftime("%Y%m", datetime(date/1000, "unixepoch")) as ym, '
-      'SUM(amount_cents) as total '
-      'FROM transactions '
-      'WHERE date >= ? AND date < ? '
-      'GROUP BY ym ORDER BY ym ASC',
-      [start.millisecondsSinceEpoch, end.millisecondsSinceEpoch],
-    );
+    final rows = await db.rawQuery('''
+      SELECT strftime('%Y%m', date/1000, 'unixepoch') AS ym,
+             SUM(amount_cents) AS total
+      FROM transactions
+      WHERE date >= ?
+      GROUP BY ym
+      ORDER BY ym ASC
+    ''', [start.millisecondsSinceEpoch]);
 
-    final out = <Map<String, int>>[];
-    DateTime cursor = DateTime(start.year, start.month);
-    while (!DateTime(cursor.year, cursor.month + 1).isAfter(end)) {
-      final ym = (cursor.year * 100) + cursor.month;
-      final found = rows.cast<Map<String, Object?>>().firstWhere(
-            (e) => int.parse(e['ym'] as String) == ym,
-            orElse: () => {'ym': '$ym', 'total': 0},
-          );
-      out.add({
-        'yyyymm': ym,
-        'total': (found['total'] as int?) ?? 0,
-      });
-      cursor = DateTime(cursor.year, cursor.month + 1);
-    }
-    return out;
+    return rows.map((row) {
+      final ym = int.parse(row['ym'] as String);
+      final total = row['total'] as int? ?? 0;
+      return {'yyyymm': ym, 'total': total};
+    }).toList();
   }
 }
 
-class BudgetRepository {}
+/// ================= BUDGET =================
+class BudgetRepository {
+  Future<Database> get _db async => (await AppDatabase.instance.database);
+
+  Future<List<BudgetModel>> getAll() async {
+    final db = await _db;
+    final rows = await db.query('budgets', orderBy: 'start DESC');
+    return rows.map((m) => BudgetModel.fromMap(m)).toList();
+  }
+
+  Future<int> upsert(BudgetModel b) async {
+    final db = await _db;
+    if (b.id == null) {
+      return db.insert('budgets', b.toMap());
+    } else {
+      return db.update('budgets', b.toMap(), where: 'id = ?', whereArgs: [b.id]);
+    }
+  }
+
+  Future<int> delete(int id) async {
+    final db = await _db;
+    return db.delete('budgets', where: 'id = ?', whereArgs: [id]);
+  }
+}
