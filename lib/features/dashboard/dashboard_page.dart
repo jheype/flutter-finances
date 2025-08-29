@@ -108,8 +108,9 @@ class DashboardPage extends ConsumerWidget {
           const SizedBox(height: 8),
           recent.when(
             data: (txs) {
-              if (txs.isEmpty)
+              if (txs.isEmpty) {
                 return const _EmptyState(message: 'Sem transações ainda — adicione a primeira!');
+              }
               return cats.when(
                 data: (list) {
                   final byId = {for (final c in list) c.id!: c};
